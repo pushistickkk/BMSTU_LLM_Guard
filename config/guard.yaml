@@ -1,0 +1,54 @@
+# Главный файл настроек
+server:
+  host: 127.0.0.1      
+  port: 8000
+  api_keys: []           
+
+# запросы отправляются на любой сервер с OpenAI-совместимым API.
+# тут меняется моделька
+backend:
+  base_url: http://localhost:11434/v1   # Ollama
+  api_key: ollama                       
+  model: gemma4:e2b     # основная модель (qwen3.5:4b — профиль profiles/qwen.yaml)                 
+  timeout_s: 180
+  defaults:                            
+    temperature: 0.0
+    seed: 42
+    max_tokens: 512
+  extra_params:                         
+    reasoning_effort: none              # отключить режим размышлений
+
+# Защищаемое выдуманное приложениечат-бот поддержки магазина ACME (ну пусть будет такое).
+app:
+  name: ACME Assistant
+  system_prompt_file: app/acme_system_prompt.txt
+
+guard:
+  enabled: false                # вкл/выкл защитный слой
+  device: cuda                  # где работают модели-охранники: cuda или cpu
+  input_checks:                 # проверки запроса до модели, сначала легкие
+    - rules                     #   правила: нормализация + явные фразы, примерно 0 мс
+    - gliner                    #   GLiNER Guard Omni: атаки и вредные темы, ~30 мс
+    - hivetrace                 #   HiveTraceGuard-Pro: атаки, весь диалог, ~70-110 мс
+    # - prompt_guard            #   Llama Prompt Guard 2: классические инъекции, ~25 мс
+  stop_on_first: true           # блокировать по первой сработавшей проверке
+  parallel: false               # true: все проверки запроса одновременно (stop_on_first тогда не действует)
+  long_input: chunks            # длинный текст: chunks — проверять весь по кускам, tail — только конец
+  chunk_chars: 1500             # охранник за один вызов видит не больше стольких символов
+  chunk_overlap: 200            # перекрытие кусков, чтобы фраза на стыке не потерялась
+  max_input_chars: 30000        # длиннее — запрос отклоняется целиком (ошибка 413)
+  secrets:                      # проверка ответа: этих строк не должно быть в ответе модели 
+    - STAFF-7781
+  output_checks:                # проверки ответа модели, дешёвые первыми
+    - secrets                   #   секрет из списка выше, ~0 мс
+    - canary                    #   случайная метка в системном промпте попала в ответ, ~0 мс
+    - prompt_similarity         #   ответ по смыслу похож на системный промпт (e5 на процессоре), ~10-20 мс
+    # - hivetrace               #   HiveTrace по паре «вопрос + ответ», ~70-110 мс (строгий профиль)
+  output_action: block          # block — заменить ответ отказом; log — только отметить в журнале
+  similarity_threshold: 0.93    # порог для prompt_similarity (ноутбук 06; 0.91 → 0.93 после правила 5, 30.10)
+  similarity_device: cpu
+  similarity_protect_from: "Правила:"   # роль бота раскрывать можно, правила и служебную информацию нельзя
+  refusal_message: "Извините, с этим я помочь не могу. Я могу подсказать по товарам, заказам, доставке и гарантии."
+
+logging:
+  requests_log: logs/requests.jsonl     # журнал запросов

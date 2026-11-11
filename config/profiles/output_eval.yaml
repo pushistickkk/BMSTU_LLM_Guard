@@ -1,0 +1,54 @@
+# Профиль для оценки проверок ОТВЕТА (ноутбук 06): входные проверки выключены,
+# все проверки ответа включены и только отмечают (log), порт 8002.
+# (сделан из профиля «с защитой») (без защиты — config/guard.yaml, порт 8000).
+# Запуск: .venv\Scripts\python -m llm_guard --config config\profiles\guarded.yaml
+# Главный файл настроек
+server:
+  host: 127.0.0.1      
+  port: 8002
+  api_keys: []           
+
+# запросы отправляются на любой сервер с OpenAI-совместимым API.
+# тут меняется моделька
+backend:
+  base_url: http://localhost:11434/v1   # Ollama
+  api_key: ollama                       
+  model: gemma4:e2b     # основная модель  (qwen3.5:4b — профиль profiles/qwen.yaml)                 
+  timeout_s: 180
+  defaults:                            
+    temperature: 0.0
+    seed: 42
+    max_tokens: 512
+  extra_params:                         
+    reasoning_effort: none              # отключить режим размышлений
+
+# Защищаемое выдуманное приложениечат-бот поддержки магазина ACME (ну пусть будет такое).
+app:
+  name: ACME Assistant
+  system_prompt_file: ../app/acme_system_prompt.txt
+
+guard:
+  enabled: true                # вкл/выкл защитный слой
+  device: cuda                  # где работают модели-охранники: cuda или cpu
+  input_checks: []              # вход не проверяем: нужны настоящие ответы модели на атаки
+  stop_on_first: false          # на выходе запускать все проверки, чтобы оценить каждую
+  parallel: true               # true: все проверки запроса одновременно (stop_on_first тогда не действует)
+  long_input: chunks            # длинный текст: chunks — проверять весь по кускам, tail — только конец
+  chunk_chars: 1500             # охранник за один вызов видит не больше стольких символов
+  chunk_overlap: 200            # перекрытие кусков, чтобы фраза на стыке не потерялась
+  max_input_chars: 30000        # длиннее — запрос отклоняется целиком (ошибка 413)
+  secrets:                      # проверка ответа: этих строк не должно быть в ответе модели
+    - STAFF-7781
+  output_checks:                # проверки ответа модели, дешёвые первыми
+    - secrets                   #   секрет из списка выше, ~0 мс
+    - canary                    #   случайная метка в системном промпте попала в ответ, ~0 мс
+    - prompt_similarity         #   ответ по смыслу похож на системный промпт (e5 на процессоре), ~10-20 мс
+    - hivetrace                 #   HiveTrace по паре «вопрос + ответ», ~70-110 мс (строгий профиль)
+  output_action: log            # только отмечать, ответ не менять
+  similarity_threshold: 0.0     # 0 = всегда пишет похожесть; порог подбираем в ноутбуке
+  similarity_device: cpu
+  similarity_protect_from: "Правила:"   # роль бота раскрывать можно, правила и служебную информацию нельзя
+  refusal_message: "Извините, с этим я помочь не могу. Я могу подсказать по товарам, заказам, доставке и гарантии."
+
+logging:
+  requests_log: logs/requests.jsonl     # журнал запросов

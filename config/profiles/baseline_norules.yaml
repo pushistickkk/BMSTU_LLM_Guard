@@ -1,0 +1,32 @@
+# Профиль «без правил в промпте»: политики НЕ прописаны в инструкции бота.
+# Показывает, что модель делает сама, без подсказок. Запуск:
+#   .venv\Scripts\python -m llm_guard --config config\profiles\baseline_norules.yaml
+server:
+  host: 127.0.0.1      
+  port: 8000
+  api_keys: []           
+
+# запросы отправляются на любой сервер с OpenAI-совместимым API.
+# тут меняется моделька
+backend:
+  base_url: http://localhost:11434/v1   # Ollama
+  api_key: ollama                       
+  model: qwen3.5:4b     # модель, менять                 
+  timeout_s: 180
+  defaults:                            
+    temperature: 0.0
+    seed: 42
+    max_tokens: 512
+  extra_params:                         
+    reasoning_effort: none              # отключить режим размышлений
+
+# Защищаемое выдуманное приложениечат-бот поддержки магазина ACME (ну пусть будет такое).
+app:
+  name: ACME Assistant
+  system_prompt_file: ../app/acme_system_prompt_norules.txt   # без правил про политику, оружие, негатив
+
+guard:
+  enabled: false # вкл выкл защитный слой
+
+logging:
+  requests_log: logs/requests.jsonl     # журнал запросов
