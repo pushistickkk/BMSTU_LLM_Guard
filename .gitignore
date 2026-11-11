@@ -16,6 +16,6 @@ pyproject.toml
 Задание.txt
 
 docs/*
-
+__pycache__
 
 

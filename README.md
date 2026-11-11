@@ -1,65 +1,62 @@
 # LLM Guard Proxy
 
-Конфигурируемый защитный слой для LLM-приложений: защита от prompt-инъекций и
-соблюдение настраиваемых политик использования. Курсовой проект по дисциплине
-«Глубокое обучение», МГТУ им. Н.Э. Баумана.
+Защитный слой для LLM-приложения.
+Защищаемое приложение — бот поддержки выдуманного магазина ACME.
 
-> **Для ИИ-ассистента:** полный контекст проекта и правила работы — в `CLAUDE.md`.
 
-> Статус: этап 1 (базовый сервис без защиты). План работ — `PLAN.txt`, журнал — `docs/progress.md`.
+![Архитектура](img/architecture.png)
+
+- **Вход**: Rules, [GLiNER Guard Omni](https://huggingface.co/hivetrace/gliner-guard-omni), [HiveTraceGuard-Pro](https://huggingface.co/hivetrace/HiveTraceGuard-Pro). Длинный текст проверяется кусками по 1500 символов, модель получает весь текст.
+- **Выход**: `secrets` (промокод, в т.ч. замаскированный), `canary` (метка в системном промпте), `prompt_similarity` (пересказ правил, e5-small).
+- Все проверки включаются и настраиваются в YAML.
 
 ## Структура
 
 ```
-config/            настройки и политики (YAML)
-src/llm_guard/     код защитного слоя
-  api/             HTTP API (FastAPI)
-  core/            конвейер, контекст запроса, решения, реестр проверок
-  normalize/       нормализация и декодирование текста
-  detectors/       детекторы prompt-инъекций
-  policies/        типы политик
-  output/          проверки ответа модели
-  backends/        клиент к LLM
-  prompts/         шаблоны промптов
-ui/                веб-интерфейс для демонстрации
-data/              датасеты (raw — исходные, benchmark — тестовый набор)
-tests/             unit, integration, benchmark
-reports/           результаты прогонов
-docs/              обзор литературы, журнал, записка
-scripts/           вспомогательные скрипты
+config/guard.yaml            без защиты, порт 8000
+config/profiles/guarded.yaml с защитой, порт 8001
+config/app/                  системный промпт бота ACME
+src/llm_guard/               код сервиса (FastAPI)
+  detectors/                 проверки входа
+  output/                    проверки ответа
+data/benchmark/              тестовые наборы
+tests/unit/                  тесты
+Summary.ipynb                итоговые замеры
 ```
 
-## Установка (Windows)
-
-Нужен Python 3.10+.
+## Запуск (Windows)
 
 ```
-cd /d D:\BMSTU\2_Grade\Deep_learning_KP
-powershell -ExecutionPolicy Bypass -File scripts\setup_env.ps1
+python -m venv .venv
+.venv\Scripts\python -m pip install torch==2.11.0 --index-url https://download.pytorch.org/whl/cu128
+.venv\Scripts\python -m pip install -r requirements.txt
+ollama pull gemma4:e2b
+
+.venv\Scripts\python -m llm_guard --config config\profiles\guarded.yaml
 ```
 
-Скрипт создаст `.venv`, установит зависимости и прогонит тесты.
+Сервис принимает запросы в формате OpenAI: `POST http://127.0.0.1:8001/v1/chat/completions`.
 
-## Запуск (этап 1)
+## Данные
 
-1. Установить Ollama: https://ollama.com/download и скачать модель:
-   `ollama pull qwen3.5:4b`
-2. Запустить сервис: `.venv\Scripts\python -m llm_guard`
-3. Отправить вопрос (в другом окне PowerShell):
+| Набор | Кейсов |
+|---|---|
+| `htr_attacks.jsonl` — атаки HiveTrace Red (47 целей × 43 приёма) | 2021 |
+| `seed_manual.jsonl` — свои атаки и пограничные вопросы | 37 |
+| `benign_ru.jsonl` — обычные вопросы покупателя | 82 |
+| `borderline_ru.jsonl` — «опасно звучащие», но безопасные | 10 |
+| `rule_paraphrases.jsonl` — пересказы правил бота | 24 |
 
-```powershell
-$body = @{ messages = @(@{ role = "user"; content = "Привет! Что ты умеешь?" }) } | ConvertTo-Json -Depth 5
-Invoke-RestMethod -Uri http://127.0.0.1:8000/v1/chat/completions -Method Post `
-  -ContentType "application/json; charset=utf-8" -Body ([Text.Encoding]::UTF8.GetBytes($body))
-```
+## Результаты
 
-Тесты: `.venv\Scripts\python -m pytest -q`
+RTX 5050 Laptop 8 ГБ, gemma4:e2b. Подробно — `Summary.ipynb`.
 
-## Замеры производительности (ноутбуки)
+| | |
+|---|---|
+| Атак заблокировано (1668) | 75.7 % (на входе 70.1 %, на выходе 5.6 %) |
+| Промокод дошёл до клиента | 0 |
+| Ложные блокировки (GLiNER + HiveTrace) | 3 из 83 (3.6 %) |
+| Задержка одного запроса | +166 мс (321 → 538 мс) |
+| Видеопамять охранников на 30 000 символов | 136 МБ (GLiNER) и 275 МБ (HiveTrace) вместо > 8 ГБ целиком |
 
-Один раз установить зависимости: `.venv\Scripts\python -m pip install -e ".[notebook]"`
-
-- `notebooks/01_latency.ipynb` — насколько сервис замедляет ответ модели;
-- `notebooks/02_load_test.ipynb` — работа при нескольких одновременных запросах.
-
-Перед запуском: Ollama и сервис запущены. Результаты сохраняются в `reports/`.
+Хуже всего ловятся негатив об ACME и политика (~60 %).
